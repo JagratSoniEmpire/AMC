@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blue Shield Energy - Solar AMC Inspection Report</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              navy: '#0A2540',
+              deep: '#061727',
+              sky: '#0284C7',
+              lightSky: '#E0F2FE',
+              accent: '#F59E0B',
+              slate: '#1E293B',
+              border: '#BAE6FD'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- html2pdf.js for client-side multi-page A4 PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Rajdhani:wght@600;700&display=swap');
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+
+    .font-brand {
+      font-family: 'Rajdhani', sans-serif;
+    }
+
+    /* Print Formatting optimized strictly for A4 */
+    @page {
+      size: A4 portrait;
+      margin: 12mm 10mm 12mm 10mm;
+    }
+
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-only {
+        display: block !important;
+      }
+      .report-container {
+        box-shadow: none !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        border: none !important;
+      }
+      .page-break-before {
+        page-break-before: always;
+      }
+      .avoid-break {
+        page-break-inside: avoid;
+      }
+    }
+
+    /* Underline style inputs in the printed/preview report */
+    .report-field-line {
+      border-bottom: 1.5px solid #0284c7;
+      min-height: 24px;
+      display: inline-block;
+      width: 100%;
+    }
+    
+    .report-blank-line {
+      border-bottom: 1px dashed #cbd5e1;
+      height: 20px;
+      width: 100%;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // SVG Icons Components
+    const SunIcon = () => (
+      <svg className="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="12" cy="12" r="5" />
+        <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      </svg>
+    );
+
+    const ShieldIcon = () => (
+      <svg className="w-8 h-8 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+      </svg>
+    );
+
+    const SolarPanelIcon = () => (
+      <svg className="w-5 h-5 text-sky-600 inline-block mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <line x1="8" y1="3" x2="8" y2="17" />
+        <line x1="16" y1="3" x2="16" y2="17" />
+        <line x1="2" y1="10" x2="22" y2="10" />
+        <path d="M6 21l3-4M18 21l-3-4" />
+      </svg>
+    );
+
+    // Initial Default Data
+    const INITIAL_REPORT_DATA = {
+      projectName: '',
+      projectAddress: '',
+      inspectionDate: new Date().toISOString().split('T')[0],
+      reportNo: 'BSE-' + Math.floor(100000 + Math.random() * 900000),
+      installedCapacity: '50 kWp',
+      pvMake: '',
+      pvCapacity: '',
+      pvQuantity: '',
+      inverterMake: '',
+      inverterCapacity: '',
+      visitTypes: {
+        Monthly: false,
+        Quartely: false, // exact text preserved
+        'Half-Yearly': false,
+        Breakdown: false
+      },
+      checklists: {
+        solarPanel: [
+          { id: 'sp1', label: 'Panel surface condition and physical damage.', status: '', remarks: '' },
+          { id: 'sp2', label: 'Dust, dirt, and cleaning requirements.', status: '', remarks: '' },
+          { id: 'sp3', label: 'Cracks, discoloration, and possible hotspots.', status: '', remarks: '' },
+          { id: 'sp4', label: 'Shading and surrounding obstructions.', status: '', remarks: '' },
+          { id: 'sp5', label: 'Mounting condition and visible cable damage.', status: '', remarks: '' }
+        ],
+        inverter: [
+          { id: 'inv1', label: 'Inverter operating status.', status: '', remarks: '' },
+          { id: 'inv2', label: 'Error codes and warning indicators.', status: '', remarks: '' },
+          { id: 'inv3', label: 'Display readings and operational parameters.', status: '', remarks: '' },
+          { id: 'inv4', label: 'Cooling system and ventilation.', status: '', remarks: '' },
+          { id: 'inv5', label: 'Visible damage and loose connections.', status: '', remarks: '' }
+        ],
+        structure: [
+          { id: 'st1', label: 'Mounting structure stability.', status: '', remarks: '' },
+          { id: 'st2', label: 'Corrosion, rust, and structural damage.', status: '', remarks: '' },
+          { id: 'st3', label: 'Bolts, nuts, and fastener condition.', status: '', remarks: '' },
+          { id: 'st4', label: 'Roof mounting and waterproofing condition.', status: '', remarks: '' },
+          { id: 'st5', label: 'Panel alignment and mechanical integrity.', status: '', remarks: '' }
+        ],
+        electrical: [
+          { id: 'el1', label: 'DC voltage measurement.', status: '', reading: '', unit: 'V', remarks: '' },
+          { id: 'el2', label: 'DC current measurement.', status: '', reading: '', unit: 'A', remarks: '' },
+          { id: 'el3', label: 'AC voltage measurement.', status: '', reading: '', unit: 'V', remarks: '' },
+          { id: 'el4', label: 'AC current measurement.', status: '', reading: '', unit: 'A', remarks: '' },
+          { id: 'el5', label: 'Earthing and grounding condition.', status: '', reading: '', unit: 'Ω', remarks: '' },
+          { id: 'el6', label: 'Cable insulation and visible wiring condition.', status: '', remarks: '' },
+          { id: 'el7', label: 'Electrical connections and protection devices.', status: '', remarks: '' }
+        ]
+      },
+      technicianName: '',
+      signatureData: ''
+    };
+
+    function App() {
+      const [formData, setFormData] = useState(() => {
+        const saved = localStorage.getItem('BSE_SOLAR_REPORT_DRAFT');
+        return saved ? JSON.parse(saved) : INITIAL_REPORT_DATA;
+      });
+
+      const [activeTab, setActiveTab] = useState('both'); // 'edit', 'preview', or 'both'
+      const [collapsedSections, setCollapsedSections] = useState({
+        solarPanel: false,
+        inverter: false,
+        structure: false,
+        electrical: false
+      });
+      const [saveNotice, setSaveNotice] = useState('');
+
+      const canvasRef = useRef(null);
+      const isDrawing = useRef(false);
+
+      // Auto-save notification trigger
+      const triggerNotice = (msg) => {
+        setSaveNotice(msg);
+        setTimeout(() => setSaveNotice(''), 3500);
+      };
+
+      const handleSaveDraft = () => {
+        localStorage.setItem('BSE_SOLAR_REPORT_DRAFT', JSON.stringify(formData));
+        triggerNotice('✓ Draft successfully saved locally in browser storage!');
+      };
+
+      const handleLoadDraft = () => {
+        const saved = localStorage.getItem('BSE_SOLAR_REPORT_DRAFT');
+        if (saved) {
+          setFormData(JSON.parse(saved));
+          triggerNotice('✓ Latest draft loaded successfully!');
+        } else {
+          alert('No saved draft found in local storage.');
+        }
+      };
+
+      const handleResetForm = () => {
+        if (confirm('Are you sure you want to reset all fields? Any unsaved data will be lost.')) {
+          setFormData({
+            ...INITIAL_REPORT_DATA,
+            reportNo: 'BSE-' + Math.floor(100000 + Math.random() * 900000)
+          });
+          clearSignature();
+          triggerNotice('Form has been reset to defaults.');
+        }
+      };
+
+      const handleNewReport = () => {
+        if (confirm('Create a new blank report with a new Report Number?')) {
+          setFormData({
+            ...INITIAL_REPORT_DATA,
+            reportNo: 'BSE-' + Math.floor(100000 + Math.random() * 900000)
+          });
+          clearSignature();
+          triggerNotice('New report initialized.');
+        }
+      };
+
+      // Signature Canvas Functions
+      const clearSignature = () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        setFormData(prev => ({ ...prev, signatureData: '' }));
+      };
+
+      const saveCanvasSignature = () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const dataUrl = canvas.toDataURL('image/png');
+          setFormData(prev => ({ ...prev, signatureData: dataUrl }));
+        }
+      };
+
+      const startDrawing = (e) => {
+        isDrawing.current = true;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        ctx.beginPath();
+        ctx.moveTo(clientX - rect.left, clientY - rect.top);
+      };
+
+      const draw = (e) => {
+        if (!isDrawing.current) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#0a2540';
+        ctx.lineTo(clientX - rect.left, clientY - rect.top);
+        ctx.stroke();
+      };
+
+      const stopDrawing = () => {
+        if (isDrawing.current) {
+          isDrawing.current = false;
+          saveCanvasSignature();
+        }
+      };
+
+      // Checkbox visit toggle
+      const handleVisitToggle = (key) => {
+        setFormData(prev => ({
+          ...prev,
+          visitTypes: {
+            ...prev.visitTypes,
+            [key]: !prev.visitTypes[key]
+          }
+        }));
+      };
+
+      // Checklist item handler
+      const handleChecklistChange = (section, index, field, value) => {
+        setFormData(prev => {
+          const updatedSection = [...prev.checklists[section]];
+          updatedSection[index] = { ...updatedSection[index], [field]: value };
+          return {
+            ...prev,
+            checklists: {
+              ...prev.checklists,
+              [section]: updatedSection
+            }
+          };
+        });
+      };
+
+      const toggleSectionCollapse = (section) => {
+        setCollapsedSections(prev => ({
+          ...prev,
+          [section]: !prev[section]
+        }));
+      };
+
+      // Section Progress counter
+      const getSectionProgress = (items) => {
+        const completed = items.filter(i => i.status !== '').length;
+        return { completed, total: items.length };
+      };
+
+      // Download PDF using html2pdf
+      const handleDownloadPDF = () => {
+        const reportElement = document.getElementById('printable-report');
+        if (!reportElement) return;
+
+        triggerNotice('Generating PDF... Please hold on.');
+
+        const opt = {
+          margin: [10, 10, 10, 10],
+          filename: `${formData.reportNo || 'BSE-Report'}_AMC_Inspection.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        };
+
+        html2pdf().set(opt).from(reportElement).save().then(() => {
+          triggerNotice('✓ PDF downloaded successfully!');
+        }).catch(err => {
+          console.error(err);
+          alert('Failed to generate PDF automatically. You can also click "Print Report" and choose "Save as PDF".');
+        });
+      };
+
+      const handlePrint = () => {
+        window.print();
+      };
+
+      const handlePrintBlankForm = () => {
+        const originalData = { ...formData };
+        // Empty out fields
+        setFormData({
+          projectName: '',
+          projectAddress: '',
+          inspectionDate: '',
+          reportNo: '',
+          installedCapacity: '',
+          pvMake: '',
+          pvCapacity: '',
+          pvQuantity: '',
+          inverterMake: '',
+          inverterCapacity: '',
+          visitTypes: {
+            Monthly: false,
+            Quartely: false,
+            'Half-Yearly': false,
+            Breakdown: false
+          },
+          checklists: {
+            solarPanel: INITIAL_REPORT_DATA.checklists.solarPanel.map(i => ({ ...i, status: '', remarks: '' })),
+            inverter: INITIAL_REPORT_DATA.checklists.inverter.map(i => ({ ...i, status: '', remarks: '' })),
+            structure: INITIAL_REPORT_DATA.checklists.structure.map(i => ({ ...i, status: '', remarks: '' })),
+            electrical: INITIAL_REPORT_DATA.checklists.electrical.map(i => ({ ...i, status: '', reading: '', remarks: '' }))
+          },
+          technicianName: '',
+          signatureData: ''
+        });
+
+        setTimeout(() => {
+          window.print();
+          // Restore after print dialog opens
+          setTimeout(() => setFormData(originalData), 1000);
+        }, 300);
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col bg-slate-100 text-slate-800">
+          
+          {/* TOP APP HEADER & CONTROLS (Hidden during print) */}
+          <header className="no-print sticky top-0 z-50 bg-brand-deep text-white border-b-4 border-sky-500 shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-brand-navy rounded-lg border border-sky-400 flex items-center justify-center shadow-inner">
+                  <ShieldIcon />
+                </div>
+                <div>
+                  <h1 className="text-xl md:text-2xl font-bold font-brand tracking-wider text-white flex items-center gap-2">
+                    BLUE SHIELD ENERGY
+                    <span className="text-xs font-sans font-medium px-2 py-0.5 bg-sky-900 text-sky-200 rounded border border-sky-600">AMC Portal</span>
+                  </h1>
+                  <p className="text-xs text-sky-300 font-medium tracking-wide">Powering Your Future</p>
+                </div>
+              </div>
+
+              {/* View Switchers */}
+              <div className="flex items-center gap-1 bg-brand-navy p-1 rounded-lg border border-sky-900">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('edit')}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold transition ${activeTab === 'edit' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
+                >
+                  Edit Form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('preview')}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold transition ${activeTab === 'preview' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
+                >
+                  Live Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('both')}
+                  className={`hidden lg:block px-3 py-1.5 rounded text-xs font-semibold transition ${activeTab === 'both' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
+                >
+                  Split View
+                </button>
+              </div>
+
+              {/* Action Toolbar */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  title="Save draft to browser localStorage"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium rounded border border-slate-600 text-slate-200 transition flex items-center gap-1 shadow-sm"
+                >
+                  💾 Save Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLoadDraft}
+                  title="Load saved draft"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium rounded border border-slate-600 text-slate-200 transition flex items-center gap-1 shadow-sm"
+                >
+                  📂 Load Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNewReport}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium rounded border border-slate-600 text-slate-200 transition flex items-center gap-1 shadow-sm"
+                >
+                  📄 New Report
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintBlankForm}
+                  title="Print a blank template to fill with pen on site"
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition flex items-center gap-1 shadow-sm"
+                >
+                  🖨️ Blank Form
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded transition flex items-center gap-1 shadow-sm"
+                >
+                  🖨️ Print
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded transition flex items-center gap-1 shadow-sm"
+                >
+                  ⬇️ Download PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="px-2.5 py-1.5 bg-rose-900/60 hover:bg-rose-800 text-rose-200 text-xs font-medium rounded border border-rose-700 transition"
+                  title="Clear all fields"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+            
+            {/* Feedback alert toast */}
+            {saveNotice && (
+              <div className="bg-emerald-500 text-brand-deep text-center py-1 text-xs font-bold transition-all shadow-inner">
+                {saveNotice}
+              </div>
+            )}
+          </header>
+
+          {/* MAIN CONTAINER */}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid gap-6 grid-cols-1 lg:grid-cols-12">
+            
+            {/* FORM EDITOR COLUMN */}
+            {(activeTab === 'edit' || activeTab === 'both') && (
+              <div className={`no-print ${activeTab === 'both' ? 'lg:col-span-6' : 'lg:col-span-12'} space-y-6`}>
+                
+                {/* 1. Project & Inspection Details Card */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+                    <h2 className="font-bold text-brand-navy flex items-center gap-2 text-base">
+                      <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                      1. Project & Inspection Information
+                    </h2>
+                    <span className="text-xs text-slate-500">Exact labels maintained</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Project Name:</label>
+                      <input
+                        type="text"
+                        value={formData.projectName}
+                        onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
+                        placeholder="e.g. Apex Industrial Green Rooftop"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Project Address:</label>
+                      <textarea
+                        rows="2"
+                        value={formData.projectAddress}
+                        onChange={(e) => setFormData({ ...formData, projectAddress: e.target.value })}
+                        placeholder="Site location, Street, City, State..."
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      />
+                      <p className="text-[11px] text-slate-600 mt-1">
+                        *An extra blank line will be preserved after Project Address in the final printed template.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Inspection Date:</label>
+                      <input
+                        type="date"
+                        value={formData.inspectionDate}
+                        onChange={(e) => setFormData({ ...formData, inspectionDate: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Report No:</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.reportNo}
+                          onChange={(e) => setFormData({ ...formData, reportNo: e.target.value })}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:outline-none font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, reportNo: 'BSE-' + Math.floor(100000 + Math.random() * 900000) })}
+                          title="Generate unique Report No"
+                          className="px-2.5 py-2 bg-slate-100 border border-slate-300 text-xs rounded hover:bg-slate-200"
+                        >
+                          🔄
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Installed Solar Capacity:</label>
+                      <input
+                        type="text"
+                        value={formData.installedCapacity}
+                        onChange={(e) => setFormData({ ...formData, installedCapacity: e.target.value })}
+                        placeholder="e.g. 50 kWp or 100 kW"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Solar Equipment Details */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+                    <h2 className="font-bold text-brand-navy flex items-center gap-2 text-base">
+                      <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                      2. SOLAR EQUIPMENT DETAILS
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">PV Modules Make:</label>
+                      <input
+                        type="text"
+                        value={formData.pvMake}
+                        onChange={(e) => setFormData({ ...formData, pvMake: e.target.value })}
+                        placeholder="e.g. Canadian Solar / Waaree"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">PV Modules Capacity:</label>
+                      <input
+                        type="text"
+                        value={formData.pvCapacity}
+                        onChange={(e) => setFormData({ ...formData, pvCapacity: e.target.value })}
+                        placeholder="e.g. 540 Wp Mono PERC"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">PV Modules Quantity:</label>
+                      <input
+                        type="number"
+                        value={formData.pvQuantity}
+                        onChange={(e) => setFormData({ ...formData, pvQuantity: e.target.value })}
+                        placeholder="e.g. 96"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Inverters Make:</label>
+                      <input
+                        type="text"
+                        value={formData.inverterMake}
+                        onChange={(e) => setFormData({ ...formData, inverterMake: e.target.value })}
+                        placeholder="e.g. Sungrow / SMA / Growatt"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Inverters Capacity:</label>
+                      <input
+                        type="text"
+                        value={formData.inverterCapacity}
+                        onChange={(e) => setFormData({ ...formData, inverterCapacity: e.target.value })}
+                        placeholder="e.g. 50 kW Grid-Tied"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. AMC Visit Overview */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+                    <h2 className="font-bold text-brand-navy flex items-center gap-2 text-base">
+                      <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                      AMC Visit Overview
+                    </h2>
+                    <span className="text-xs text-slate-400">Select applicable visit type</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { key: 'Monthly', label: 'Monthly' },
+                      { key: 'Quartely', label: 'Quartely' }, // exact label preserved
+                      { key: 'Half-Yearly', label: 'Half-Yearly' },
+                      { key: 'Breakdown', label: 'Breakdown' }
+                    ].map(card => {
+                      const isSelected = !!formData.visitTypes[card.key];
+                      return (
+                        <div
+                          key={card.key}
+                          onClick={() => handleVisitToggle(card.key)}
+                          className={`cursor-pointer border-2 rounded-xl p-3 flex flex-col items-center justify-center text-center transition-all ${
+                            isSelected
+                              ? 'bg-sky-50 border-sky-500 text-sky-900 shadow-sm font-semibold'
+                              : 'bg-white border-slate-200 text-slate-600 hover:border-sky-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center mb-2 border ${isSelected ? 'bg-sky-600 border-sky-600 text-white' : 'border-slate-300 bg-white'}`}>
+                            {isSelected && (
+                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                                <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+                              </svg>
+                            )}
+                          </div>
+                          <span className="text-xs tracking-wide">{card.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Inspection Checklist Form Section */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-5">
+                  <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+                    <div>
+                      <h2 className="font-bold text-brand-navy flex items-center gap-2 text-base">
+                        <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                        Inspection Checklist:
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">Record Pass, Fail, or N/A. No items are pre-filled as Pass.</p>
+                    </div>
+                  </div>
+
+                  {/* Section A: Solar-Panel Inspection Checklist Details */}
+                  <div className="border border-sky-100 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionCollapse('solarPanel')}
+                      className="w-full bg-sky-50/80 px-4 py-2.5 flex items-center justify-between text-left hover:bg-sky-100/60 transition"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs md:text-sm text-brand-navy">
+                          Solar-Panel Inspection Checklist Details
+                        </span>
+                        {(() => {
+                          const p = getSectionProgress(formData.checklists.solarPanel);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.completed === p.total ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {p.completed}/{p.total} Done
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <span className="text-xs text-slate-500 font-bold">{collapsedSections.solarPanel ? '▼ Expand' : '▲ Collapse'}</span>
+                    </button>
+
+                    {!collapsedSections.solarPanel && (
+                      <div className="p-3 space-y-3 bg-white divide-y divide-slate-100">
+                        {formData.checklists.solarPanel.map((item, idx) => (
+                          <div key={item.id} className="pt-2.5 first:pt-0">
+                            <p className="text-xs font-medium text-slate-800 mb-1.5">{idx + 1}. {item.label}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                              <div className="sm:col-span-5 flex items-center gap-1.5">
+                                {['Pass', 'Fail', 'N/A'].map(opt => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => handleChecklistChange('solarPanel', idx, 'status', item.status === opt ? '' : opt)}
+                                    className={`flex-1 py-1 px-2 text-xs font-semibold rounded border transition ${
+                                      item.status === opt
+                                        ? opt === 'Pass'
+                                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                                          : opt === 'Fail'
+                                          ? 'bg-rose-600 border-rose-600 text-white'
+                                          : 'bg-slate-600 border-slate-600 text-white'
+                                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="sm:col-span-7">
+                                <input
+                                  type="text"
+                                  placeholder="Remarks (optional)"
+                                  value={item.remarks}
+                                  onChange={(e) => handleChecklistChange('solarPanel', idx, 'remarks', e.target.value)}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-sky-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section B: Inverter Inspection Checklist Details */}
+                  <div className="border border-sky-100 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionCollapse('inverter')}
+                      className="w-full bg-sky-50/80 px-4 py-2.5 flex items-center justify-between text-left hover:bg-sky-100/60 transition"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs md:text-sm text-brand-navy">
+                          Inverter Inspection Checklist Details
+                        </span>
+                        {(() => {
+                          const p = getSectionProgress(formData.checklists.inverter);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.completed === p.total ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {p.completed}/{p.total} Done
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <span className="text-xs text-slate-500 font-bold">{collapsedSections.inverter ? '▼ Expand' : '▲ Collapse'}</span>
+                    </button>
+
+                    {!collapsedSections.inverter && (
+                      <div className="p-3 space-y-3 bg-white divide-y divide-slate-100">
+                        {formData.checklists.inverter.map((item, idx) => (
+                          <div key={item.id} className="pt-2.5 first:pt-0">
+                            <p className="text-xs font-medium text-slate-800 mb-1.5">{idx + 1}. {item.label}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                              <div className="sm:col-span-5 flex items-center gap-1.5">
+                                {['Pass', 'Fail', 'N/A'].map(opt => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => handleChecklistChange('inverter', idx, 'status', item.status === opt ? '' : opt)}
+                                    className={`flex-1 py-1 px-2 text-xs font-semibold rounded border transition ${
+                                      item.status === opt
+                                        ? opt === 'Pass'
+                                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                                          : opt === 'Fail'
+                                          ? 'bg-rose-600 border-rose-600 text-white'
+                                          : 'bg-slate-600 border-slate-600 text-white'
+                                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="sm:col-span-7">
+                                <input
+                                  type="text"
+                                  placeholder="Remarks (optional)"
+                                  value={item.remarks}
+                                  onChange={(e) => handleChecklistChange('inverter', idx, 'remarks', e.target.value)}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-sky-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section C: Structure Inspection Checklist Details */}
+                  <div className="border border-sky-100 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionCollapse('structure')}
+                      className="w-full bg-sky-50/80 px-4 py-2.5 flex items-center justify-between text-left hover:bg-sky-100/60 transition"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs md:text-sm text-brand-navy">
+                          Structure Inspection Checklist Details
+                        </span>
+                        {(() => {
+                          const p = getSectionProgress(formData.checklists.structure);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.completed === p.total ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {p.completed}/{p.total} Done
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <span className="text-xs text-slate-500 font-bold">{collapsedSections.structure ? '▼ Expand' : '▲ Collapse'}</span>
+                    </button>
+
+                    {!collapsedSections.structure && (
+                      <div className="p-3 space-y-3 bg-white divide-y divide-slate-100">
+                        {formData.checklists.structure.map((item, idx) => (
+                          <div key={item.id} className="pt-2.5 first:pt-0">
+                            <p className="text-xs font-medium text-slate-800 mb-1.5">{idx + 1}. {item.label}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                              <div className="sm:col-span-5 flex items-center gap-1.5">
+                                {['Pass', 'Fail', 'N/A'].map(opt => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => handleChecklistChange('structure', idx, 'status', item.status === opt ? '' : opt)}
+                                    className={`flex-1 py-1 px-2 text-xs font-semibold rounded border transition ${
+                                      item.status === opt
+                                        ? opt === 'Pass'
+                                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                                          : opt === 'Fail'
+                                          ? 'bg-rose-600 border-rose-600 text-white'
+                                          : 'bg-slate-600 border-slate-600 text-white'
+                                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="sm:col-span-7">
+                                <input
+                                  type="text"
+                                  placeholder="Remarks (optional)"
+                                  value={item.remarks}
+                                  onChange={(e) => handleChecklistChange('structure', idx, 'remarks', e.target.value)}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-sky-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section D: Electrical Parameter Checklist Details */}
+                  <div className="border border-sky-100 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionCollapse('electrical')}
+                      className="w-full bg-sky-50/80 px-4 py-2.5 flex items-center justify-between text-left hover:bg-sky-100/60 transition"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs md:text-sm text-brand-navy">
+                          Electrical Parameter Checklist Details
+                        </span>
+                        {(() => {
+                          const p = getSectionProgress(formData.checklists.electrical);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.completed === p.total ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {p.completed}/{p.total} Done
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <span className="text-xs text-slate-500 font-bold">{collapsedSections.electrical ? '▼ Expand' : '▲ Collapse'}</span>
+                    </button>
+
+                    {!collapsedSections.electrical && (
+                      <div className="p-3 space-y-4 bg-white divide-y divide-slate-100">
+                        {formData.checklists.electrical.map((item, idx) => (
+                          <div key={item.id} className="pt-3 first:pt-0">
+                            <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">
+                              <span className="text-xs font-semibold text-slate-800">{idx + 1}. {item.label}</span>
+                              {item.unit && (
+                                <span className="text-[11px] font-mono text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                                  Unit: {item.unit}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                              {/* Readings if parameter measurement */}
+                              {item.unit ? (
+                                <div className="sm:col-span-4 flex items-center">
+                                  <div className="relative w-full">
+                                    <input
+                                      type="text"
+                                      placeholder={`Reading (${item.unit})`}
+                                      value={item.reading || ''}
+                                      onChange={(e) => handleChecklistChange('electrical', idx, 'reading', e.target.value)}
+                                      className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded font-mono pr-8 focus:ring-1 focus:ring-sky-500"
+                                    />
+                                    <span className="absolute right-2.5 top-1 text-xs font-bold text-slate-400">
+                                      {item.unit}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {/* Status pass/fail/na */}
+                              <div className={`${item.unit ? 'sm:col-span-4' : 'sm:col-span-5'} flex items-center gap-1`}>
+                                {['Pass', 'Fail', 'N/A'].map(opt => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => handleChecklistChange('electrical', idx, 'status', item.status === opt ? '' : opt)}
+                                    className={`flex-1 py-1 px-1.5 text-xs font-semibold rounded border transition ${
+                                      item.status === opt
+                                        ? opt === 'Pass'
+                                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                                          : opt === 'Fail'
+                                          ? 'bg-rose-600 border-rose-600 text-white'
+                                          : 'bg-slate-600 border-slate-600 text-white'
+                                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Remarks */}
+                              <div className={`${item.unit ? 'sm:col-span-4' : 'sm:col-span-7'}`}>
+                                <input
+                                  type="text"
+                                  placeholder="Remarks (optional)"
+                                  value={item.remarks}
+                                  onChange={(e) => handleChecklistChange('electrical', idx, 'remarks', e.target.value)}
+                                  className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-sky-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 5. Technician and Authorization */}
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-4">
+                  <div className="border-b pb-3 border-slate-100">
+                    <h2 className="font-bold text-brand-navy text-base">
+                      5. Technician & Authorization Sign-off
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      {/* Exact spelling rule: Techinician Name: */}
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Techinician Name:
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.technicianName}
+                        onChange={(e) => setFormData({ ...formData, technicianName: e.target.value })}
+                        placeholder="Enter full name of certified technician"
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">Preserved exact required label spelling.</p>
+                    </div>
+
+                    <div>
+                      {/* Exact spelling rule: Authorized Sign-off: */}
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Authorized Sign-off:
+                      </label>
+                      
+                      <div className="border-2 border-dashed border-sky-300 rounded-lg p-2 bg-slate-50 relative">
+                        <canvas
+                          ref={canvasRef}
+                          width={320}
+                          height={120}
+                          className="w-full h-28 bg-white rounded border border-slate-200 cursor-crosshair touch-none"
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-[11px] text-slate-500">Sign with stylus, mouse, or touch</span>
+                          <button
+                            type="button"
+                            onClick={clearSignature}
+                            className="px-2 py-0.5 text-xs bg-slate-200 text-slate-700 rounded hover:bg-slate-300"
+                          >
+                            Clear Signature
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* LIVE PREVIEW & PRINTABLE A4 REPORT */}
+            {(activeTab === 'preview' || activeTab === 'both') && (
+              <div className={`${activeTab === 'both' ? 'lg:col-span-6' : 'lg:col-span-12'} flex flex-col items-center`}>
+                
+                {/* Visual wrapper for preview zoom/centering */}
+                <div className="w-full max-w-[800px] overflow-x-auto pb-8">
+                  
+                  {/* PRINTABLE REPORT DOCUMENT CONTAINER */}
+                  <div
+                    id="printable-report"
+                    className="report-container bg-white border border-slate-300 shadow-xl rounded-sm p-8 text-slate-900 mx-auto text-[13px] leading-snug"
+                    style={{ minHeight: '1120px', width: '100%', maxWidth: '210mm' }}
+                  >
+                    
+                    {/* REPORT HEADER */}
+                    <div className="border-b-2 border-brand-navy pb-4 mb-4">
+                      <div className="flex items-start justify-between">
+                        
+                        {/* Company Logo and Tagline */}
+                        <div className="flex items-center gap-3">
+                          <div className="w-14 h-14 bg-gradient-to-br from-brand-navy via-sky-800 to-sky-600 rounded-xl flex flex-col items-center justify-center text-white shadow-md border border-sky-300">
+                            <ShieldIcon />
+                          </div>
+                          <div>
+                            <h1 className="text-2xl font-bold font-brand tracking-wider text-brand-navy leading-none">
+                              BLUE SHIELD ENERGY
+                            </h1>
+                            <p className="text-xs font-semibold text-sky-700 tracking-wider uppercase mt-1">
+                              Powering Your Future
+                            </p>
+                            <p className="text-[10px] text-slate-500">Solar PV Installation, Operation & Maintenance Services</p>
+                          </div>
+                        </div>
+
+                        {/* Sunlight & Solar Graphic Badge */}
+                        <div className="text-right hidden sm:block">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 rounded-full border border-amber-200 text-amber-800 text-[11px] font-semibold">
+                            <SunIcon />
+                            <span>Certified Solar AMC</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">ISO 9001:2015 Compliant Inspection</div>
+                        </div>
+                      </div>
+
+                      {/* Official Report Title Banner */}
+                      <div className="mt-4 bg-brand-navy text-white text-center py-2 px-3 rounded-md shadow-sm">
+                        <h2 className="text-sm md:text-base font-bold tracking-wider font-brand">
+                          SOLAR PV INSTALLATION & AMC INSPECTION REPORT
+                        </h2>
+                      </div>
+                    </div>
+
+                    {/* SECTION: PROJECT & INSPECTION INFO */}
+                    <div className="grid grid-cols-12 gap-3 mb-4 avoid-break">
+                      
+                      {/* Left: Project Information */}
+                      <div className="col-span-12 md:col-span-7 bg-slate-50/70 p-3 rounded-lg border border-sky-200">
+                        <div className="mb-2">
+                          <span className="font-bold text-brand-navy text-xs uppercase tracking-wide">Project Name:</span>
+                          <div className="report-field-line text-sm font-semibold text-slate-800 px-1 mt-0.5">
+                            {formData.projectName || <span className="text-transparent">_</span>}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="font-bold text-brand-navy text-xs uppercase tracking-wide">Project Address:</span>
+                          <div className="report-field-line text-xs font-medium text-slate-700 px-1 mt-0.5 min-h-[36px]">
+                            {formData.projectAddress || <span className="text-transparent">_</span>}
+                          </div>
+                          {/* Mandatory additional blank line after Project Address */}
+                          <div className="report-blank-line" title="Additional blank line as specified"></div>
+                        </div>
+                      </div>
+
+                      {/* Right: Inspection Information */}
+                      <div className="col-span-12 md:col-span-5 bg-sky-50/40 p-3 rounded-lg border border-sky-200 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-baseline mb-2">
+                            <span className="font-bold text-brand-navy text-xs uppercase tracking-wide">Inspection Date:</span>
+                            <span className="report-field-line text-right font-medium text-xs px-1 w-32">
+                              {formData.inspectionDate || '—'}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-baseline mb-2">
+                            <span className="font-bold text-brand-navy text-xs uppercase tracking-wide">Report No:</span>
+                            <span className="report-field-line text-right font-mono font-bold text-xs text-sky-800 px-1 w-32">
+                              {formData.reportNo || '—'}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-baseline">
+                            <span className="font-bold text-brand-navy text-xs uppercase tracking-wide">Installed Solar Capacity:</span>
+                            <span className="report-field-line text-right font-semibold text-xs text-brand-navy px-1 w-28">
+                              {formData.installedCapacity || '—'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION: SOLAR EQUIPMENT DETAILS */}
+                    <div className="mb-4 avoid-break">
+                      <div className="bg-gradient-to-r from-brand-navy to-sky-900 text-white px-3 py-1 rounded-t-md font-bold text-xs uppercase tracking-wider flex items-center justify-between">
+                        <span>SOLAR EQUIPMENT DETAILS</span>
+                        <span className="text-[10px] text-sky-200 lowercase">hardware specifications</span>
+                      </div>
+                      
+                      <div className="border border-sky-200 border-t-0 p-3 rounded-b-md bg-white grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                        <div className="flex items-baseline">
+                          <span className="font-semibold text-xs text-slate-700 w-44">PV Modules Make:</span>
+                          <span className="report-field-line text-xs font-medium px-1 flex-1">
+                            {formData.pvMake || ''}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline">
+                          <span className="font-semibold text-xs text-slate-700 w-44">PV Modules Capacity:</span>
+                          <span className="report-field-line text-xs font-medium px-1 flex-1">
+                            {formData.pvCapacity || ''}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline">
+                          <span className="font-semibold text-xs text-slate-700 w-44">PV Modules Quantity:</span>
+                          <span className="report-field-line text-xs font-medium px-1 flex-1">
+                            {formData.pvQuantity || ''}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline">
+                          <span className="font-semibold text-xs text-slate-700 w-44">Inverters Make:</span>
+                          <span className="report-field-line text-xs font-medium px-1 flex-1">
+                            {formData.inverterMake || ''}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline md:col-span-2">
+                          <span className="font-semibold text-xs text-slate-700 w-44">Inverters Capacity:</span>
+                          <span className="report-field-line text-xs font-medium px-1 flex-1">
+                            {formData.inverterCapacity || ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION: AMC VISIT OVERVIEW */}
+                    <div className="mb-4 avoid-break">
+                      <div className="border-b-2 border-sky-600 pb-1 mb-2">
+                        <h3 className="font-bold text-brand-navy text-xs uppercase tracking-wider flex items-center gap-1.5">
+                          <span>AMC Visit Overview</span>
+                        </h3>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { key: 'Monthly', text: 'Monthly' },
+                          { key: 'Quartely', text: 'Quartely' }, // exact label preserved
+                          { key: 'Half-Yearly', text: 'Half-Yearly' },
+                          { key: 'Breakdown', text: 'Breakdown' }
+                        ].map(item => {
+                          const isChecked = !!formData.visitTypes[item.key];
+                          return (
+                            <div
+                              key={item.key}
+                              className={`border rounded-lg p-2 flex items-center justify-center gap-2 text-center ${
+                                isChecked
+                                  ? 'bg-sky-50 border-sky-500 font-bold text-sky-950 shadow-xs'
+                                  : 'border-slate-200 bg-white text-slate-400'
+                              }`}
+                            >
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] ${isChecked ? 'bg-sky-600 border-sky-600 text-white' : 'border-slate-300'}`}>
+                                {isChecked ? '✓' : ''}
+                              </div>
+                              <span className="text-xs">{item.text}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* SECTION: INSPECTION CHECKLIST HEADING */}
+                    <div className="border-t-2 border-brand-navy pt-2 mb-2 avoid-break">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-brand-navy text-sm uppercase tracking-wide">
+                          Inspection Checklist:
+                        </h3>
+                        <span className="text-[10px] text-slate-500 font-medium italic">Standard O&M Audit Protocol</span>
+                      </div>
+                    </div>
+
+                    {/* CHECKLIST TABLE HELPER RENDERER */}
+                    {/* Subsection 1: Solar-Panel Inspection Checklist Details */}
+                    <div className="mb-4 avoid-break">
+                      <div className="bg-sky-100/90 text-brand-navy font-bold text-xs px-2.5 py-1 rounded-t border-t border-l border-r border-sky-300 flex items-center justify-between">
+                        <span>Solar-Panel Inspection Checklist Details</span>
+                      </div>
+                      <table className="w-full text-xs border border-sky-300 rounded-b overflow-hidden">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 border-b border-sky-200">
+                            <th className="py-1 px-2 text-left font-semibold w-7/12">Inspection Item</th>
+                            <th className="py-1 px-2 text-center font-semibold w-2/12">Status</th>
+                            <th className="py-1 px-2 text-left font-semibold w-3/12">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {formData.checklists.solarPanel.map((row, i) => (
+                            <tr key={row.id} className={i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
+                              <td className="py-1 px-2 text-slate-800">{row.label}</td>
+                              <td className="py-1 px-2 text-center font-bold">
+                                {row.status === 'Pass' && <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[11px]">PASS</span>}
+                                {row.status === 'Fail' && <span className="text-rose-700 bg-rose-50 border border-rose-300 px-2 py-0.5 rounded text-[11px]">FAIL</span>}
+                                {row.status === 'N/A' && <span className="text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded text-[11px]">N/A</span>}
+                                {!row.status && <span className="text-slate-300 font-normal">--</span>}
+                              </td>
+                              <td className="py-1 px-2 text-slate-600 text-[11px] italic">{row.remarks || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Subsection 2: Inverter Inspection Checklist Details */}
+                    <div className="mb-4 avoid-break">
+                      <div className="bg-sky-100/90 text-brand-navy font-bold text-xs px-2.5 py-1 rounded-t border-t border-l border-r border-sky-300 flex items-center justify-between">
+                        <span>Inverter Inspection Checklist Details</span>
+                      </div>
+                      <table className="w-full text-xs border border-sky-300 rounded-b overflow-hidden">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 border-b border-sky-200">
+                            <th className="py-1 px-2 text-left font-semibold w-7/12">Inspection Item</th>
+                            <th className="py-1 px-2 text-center font-semibold w-2/12">Status</th>
+                            <th className="py-1 px-2 text-left font-semibold w-3/12">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {formData.checklists.inverter.map((row, i) => (
+                            <tr key={row.id} className={i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
+                              <td className="py-1 px-2 text-slate-800">{row.label}</td>
+                              <td className="py-1 px-2 text-center font-bold">
+                                {row.status === 'Pass' && <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[11px]">PASS</span>}
+                                {row.status === 'Fail' && <span className="text-rose-700 bg-rose-50 border border-rose-300 px-2 py-0.5 rounded text-[11px]">FAIL</span>}
+                                {row.status === 'N/A' && <span className="text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded text-[11px]">N/A</span>}
+                                {!row.status && <span className="text-slate-300 font-normal">--</span>}
+                              </td>
+                              <td className="py-1 px-2 text-slate-600 text-[11px] italic">{row.remarks || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Subsection 3: Structure Inspection Checklist Details */}
+                    <div className="mb-4 avoid-break">
+                      <div className="bg-sky-100/90 text-brand-navy font-bold text-xs px-2.5 py-1 rounded-t border-t border-l border-r border-sky-300 flex items-center justify-between">
+                        <span>Structure Inspection Checklist Details</span>
+                      </div>
+                      <table className="w-full text-xs border border-sky-300 rounded-b overflow-hidden">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 border-b border-sky-200">
+                            <th className="py-1 px-2 text-left font-semibold w-7/12">Inspection Item</th>
+                            <th className="py-1 px-2 text-center font-semibold w-2/12">Status</th>
+                            <th className="py-1 px-2 text-left font-semibold w-3/12">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {formData.checklists.structure.map((row, i) => (
+                            <tr key={row.id} className={i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
+                              <td className="py-1 px-2 text-slate-800">{row.label}</td>
+                              <td className="py-1 px-2 text-center font-bold">
+                                {row.status === 'Pass' && <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[11px]">PASS</span>}
+                                {row.status === 'Fail' && <span className="text-rose-700 bg-rose-50 border border-rose-300 px-2 py-0.5 rounded text-[11px]">FAIL</span>}
+                                {row.status === 'N/A' && <span className="text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded text-[11px]">N/A</span>}
+                                {!row.status && <span className="text-slate-300 font-normal">--</span>}
+                              </td>
+                              <td className="py-1 px-2 text-slate-600 text-[11px] italic">{row.remarks || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Subsection 4: Electrical Parameter Checklist Details */}
+                    <div className="mb-4 avoid-break">
+                      <div className="bg-sky-100/90 text-brand-navy font-bold text-xs px-2.5 py-1 rounded-t border-t border-l border-r border-sky-300 flex items-center justify-between">
+                        <span>Electrical Parameter Checklist Details</span>
+                      </div>
+                      <table className="w-full text-xs border border-sky-300 rounded-b overflow-hidden">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 border-b border-sky-200">
+                            <th className="py-1 px-2 text-left font-semibold w-5/12">Parameter / Test Item</th>
+                            <th className="py-1 px-2 text-center font-semibold w-2/12">Reading</th>
+                            <th className="py-1 px-2 text-center font-semibold w-2/12">Status</th>
+                            <th className="py-1 px-2 text-left font-semibold w-3/12">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {formData.checklists.electrical.map((row, i) => (
+                            <tr key={row.id} className={i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
+                              <td className="py-1 px-2 text-slate-800">{row.label}</td>
+                              <td className="py-1 px-2 text-center font-mono font-medium text-brand-navy">
+                                {row.reading ? `${row.reading} ${row.unit || ''}` : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="py-1 px-2 text-center font-bold">
+                                {row.status === 'Pass' && <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[11px]">PASS</span>}
+                                {row.status === 'Fail' && <span className="text-rose-700 bg-rose-50 border border-rose-300 px-2 py-0.5 rounded text-[11px]">FAIL</span>}
+                                {row.status === 'N/A' && <span className="text-slate-600 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded text-[11px]">N/A</span>}
+                                {!row.status && <span className="text-slate-300 font-normal">--</span>}
+                              </td>
+                              <td className="py-1 px-2 text-slate-600 text-[11px] italic">{row.remarks || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* SECTION: TECHNICIAN & SIGNATURE AUTHORIZATION */}
+                    <div className="border border-sky-200 rounded-lg p-3 bg-slate-50/50 mt-4 avoid-break">
+                      <div className="grid grid-cols-2 gap-6 items-end">
+                        
+                        {/* Technician Name (Exact label spelling: Techinician Name:) */}
+                        <div>
+                          <span className="font-bold text-brand-navy text-xs uppercase tracking-wide block mb-1">
+                            Techinician Name:
+                          </span>
+                          <div className="report-field-line text-sm font-semibold text-slate-800 px-1">
+                            {formData.technicianName || <span className="text-transparent">_</span>}
+                          </div>
+                          <span className="text-[10px] text-slate-400 mt-1 block">Solar PV System Specialist</span>
+                        </div>
+
+                        {/* Authorized Sign-off (Exact label spelling: Authorized Sign-off:) */}
+                        <div>
+                          <span className="font-bold text-brand-navy text-xs uppercase tracking-wide block mb-1 text-right">
+                            Authorized Sign-off:
+                          </span>
+                          <div className="border-b-2 border-brand-navy h-16 flex items-center justify-end px-2 overflow-hidden bg-white/50 rounded">
+                            {formData.signatureData ? (
+                              <img src={formData.signatureData} alt="Authorized Signature" className="max-h-14 object-contain" />
+                            ) : (
+                              <span className="text-xs text-slate-300 italic">Signature stamp / digital sign</span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 mt-1 block text-right">Blue Shield Energy Authorized Representative</span>
+                        </div>
+
+                      </div>
+                    </div>
+
+                    {/* FOOTER NOTICE */}
+                    <div className="mt-6 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-600 avoid-break flex items-center justify-between">
+                      <span>BLUE SHIELD ENERGY • Powering Your Future</span>
+                      <span>AMC Inspection Verification Sheet</span>
+                      <span>Page 1 of 1 (Standard)</span>
+                    </div>
+
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+          </main>
+
+          {/* FOOTER */}
+          <footer className="no-print bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
+            <p>© {new Date().getFullYear()} <strong>BLUE SHIELD ENERGY</strong> — All inspection parameters, labels, and layouts follow certified standards.</p>
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
